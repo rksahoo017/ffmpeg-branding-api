@@ -16,8 +16,7 @@ async def brand_video(
     logo: UploadFile = File(...),
     brandtext: str = Form("@MyBrand")
 ):
-    safe_text = brandtext.replace("'", "\\'")
-
+    # For now we ignore text in ffmpeg to test pipeline
     with tempfile.TemporaryDirectory() as tmpdir:
         video_path = os.path.join(tmpdir, "video.mp4")
         logo_path = os.path.join(tmpdir, "logo.png")
@@ -29,12 +28,13 @@ async def brand_video(
         with open(logo_path, "wb") as f:
             f.write(await logo.read())
 
+        # SIMPLE: overlay logo only, top-right
         cmd = [
             "ffmpeg", "-y",
             "-i", video_path,
             "-i", logo_path,
             "-filter_complex",
-            f"[0:v][1:v] overlay=W-w-30:30, drawtext=text='{safe_text}':fontcolor=white:fontsize=40:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-150",
+            "[0:v][1:v] overlay=W-w-30:30",
             "-preset", "fast",
             "-vcodec", "libx264",
             "-crf", "23",
@@ -43,11 +43,21 @@ async def brand_video(
         ]
 
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
         except subprocess.CalledProcessError as e:
+            # Return ffmpeg error text so we can see it
             return JSONResponse(
                 status_code=500,
                 content={"error": "ffmpeg failed", "details": e.stderr.decode("utf-8", errors="ignore")}
             )
 
-        return FileResponse(output_path, media_type="video/mp4", filename="branded_reel.mp4")
+        return FileResponse(
+            output_path,
+            media_type="video/mp4",
+            filename="branded_reel.mp4"
+        )
