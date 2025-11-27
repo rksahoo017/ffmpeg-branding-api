@@ -1,66 +1,66 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
-import tempfile
-import subprocess
-import os
+<?php
 
-app = FastAPI()
+// Render FFmpeg API URL
+$API_URL = "https://ffmpeg-branding-api.onrender.com/brand";
 
-@app.get("/")
-def root():
-    return {"status": "ok", "message": "Reels branding FFmpeg API"}
+// Validate input
+if (!isset($_FILES['video']) || !isset($_FILES['logo']) || !isset($_POST['brandtext'])) {
+    die("Missing input.");
+}
 
-@app.post("/brand")
-async def brand_video(
-    video: UploadFile = File(...),
-    logo: UploadFile = File(...),
-    brandtext: str = Form("@MyBrand")
-):
-    # For now we only overlay logo (no text) to make debugging easier
-    with tempfile.TemporaryDirectory() as tmpdir:
-        video_path = os.path.join(tmpdir, "video.mp4")
-        logo_path = os.path.join(tmpdir, "logo.png")
-        output_path = os.path.join(tmpdir, "output.mp4")
+$brandtext = $_POST['brandtext'];
 
-        # Save uploaded files
-        with open(video_path, "wb") as f:
-            f.write(await video.read())
+// Prepare uploads
+$videoFile = curl_file_create(
+    $_FILES['video']['tmp_name'],
+    $_FILES['video']['type'],
+    $_FILES['video']['name']
+);
 
-        with open(logo_path, "wb") as f:
-            f.write(await logo.read())
+$logoFile = curl_file_create(
+    $_FILES['logo']['tmp_name'],
+    $_FILES['logo']['type'],
+    $_FILES['logo']['name']
+);
 
-        # Very simple ffmpeg command: just overlay logo at top-right
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-i", logo_path,
-            "-filter_complex", "[0:v][1:v] overlay=W-w-30:30",
-            "-preset", "fast",
-            "-vcodec", "libx264",
-            "-crf", "23",
-            "-acodec", "copy",
-            output_path
-        ]
+$postFields = [
+    'video'     => $videoFile,
+    'logo'      => $logoFile,
+    'brandtext' => $brandtext
+];
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-        except subprocess.CalledProcessError as e:
-            # Return full ffmpeg stderr so we can see exact error from PHP
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "error": "ffmpeg_failed",
-                    "stderr": e.stderr.decode("utf-8", errors="ignore")
-                }
-            )
+// cURL request to the FFmpeg API
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $API_URL);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_TIMEOUT, 600);
 
-        return FileResponse(
-            output_path,
-            media_type="video/mp4",
-            filename="branded_reel.mp4"
-        )
+$response = curl_exec($ch);
+
+if ($response === false) {
+    die("Error contacting FFmpeg API: " . curl_error($ch));
+}
+
+$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+// If API did not return 200, show RAW response for debugging
+if ($http_code !== 200) {
+    header("Content-Type: text/plain; charset=utf-8");
+    echo "HTTP code from API: {$http_code}\n\n";
+    echo "Raw response from API:\n";
+    echo $response;
+    exit;
+}
+
+// Save the output video
+$outputName = "branded_" . time() . ".mp4";
+file_put_contents($outputName, $response);
+
+// Show download link
+echo "<h2>Branded Video Ready</h2>";
+echo "<p><a href='$outputName' download>⬇ Download Branded Reel</a></p>";
+
+?>
